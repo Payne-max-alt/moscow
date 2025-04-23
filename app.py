@@ -1,4 +1,4 @@
-# --- v1.3.2 PATCH: poprawka usuwania i edycji punktów (z rerun) ---
+# --- v1.5.0 - PUBLIC RELEASE ---
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
@@ -12,7 +12,8 @@ st.title("📊 MoSCoW Backlog Visualizer")
 st.sidebar.header("⚙️ Ustawienia")
 velocity = st.sidebar.number_input("Velocity zespołu", min_value=10, value=100, step=10)
 must_threshold = st.sidebar.number_input("Granica 'Must have'", min_value=0, max_value=velocity, value=50)
-should_threshold = st.sidebar.number_input("Granica 'Should have'", min_value=must_threshold, max_value=velocity, value=75)
+should_threshold = st.sidebar.number_input("Granica 'Should have'", min_value=must_threshold, max_value=velocity,
+                                           value=75)
 
 # --- Inicjalizacja session_state ---
 if "tasks" not in st.session_state:
@@ -140,20 +141,21 @@ if st.session_state.tasks:
         workbook = writer.book
         worksheet = writer.sheets['Chart']
         chart = workbook.add_chart({'type': 'column'})
-        categories_range = f'=Chart!$A$2:$A${len(df_chart)+1}'
+        categories_range = f'=Chart!$A$2:$A${len(df_chart) + 1}'
         for i, cat in enumerate(["Must have", "Should have", "Could have", "Won't have"]):
             col = chr(66 + i)
             chart.add_series({
                 'name': cat,
                 'categories': categories_range,
-                'values': f'=Chart!${col}$2:${col}${len(df_chart)+1}'
+                'values': f'=Chart!${col}$2:${col}${len(df_chart) + 1}'
             })
         chart.set_title({'name': 'Task Distribution by MoSCoW Category'})
         chart.set_x_axis({'name': 'Tasks'})
         chart.set_y_axis({'name': 'Points'})
         chart.set_style(11)
         worksheet.insert_chart('G2', chart)
-    st.download_button("📥 Pobierz Excel", data=excel_buffer.getvalue(), file_name="moscow_backlog.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button("📥 Pobierz Excel", data=excel_buffer.getvalue(), file_name="moscow_backlog.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # --- Formularz dodawania zadania ---
 st.subheader("➕ Dodaj nowe zadanie")
@@ -169,19 +171,66 @@ with st.form("add_task_form"):
             st.success(f"Dodano zadanie: {task_name} ({task_points} pkt)")
             st.rerun()
 
-# --- Lista i edycja zadań ---
+# --- Lista i edycja zadań z opcją przesuwania ---
+
 st.subheader("📝 Lista zadań")
+st.markdown("""
+<style>
+    .task-header {
+        display: flex;
+        font-weight: bold;
+        padding: 4px 10px;
+        margin-bottom: 4px;
+    }
+    .task-header > div {
+        flex: 1;
+    }
+    .task-row {
+        margin-bottom: 4px;
+        padding: 6px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+header_cols = st.columns([2, 5, 1, 1])
+header_cols[0].markdown("**Priorytet**")
+header_cols[1].markdown("**Nazwa**")
+header_cols[2].markdown("**Pkt**")
+header_cols[3].markdown("**Usuń**")
 to_delete = []
+
 for i, task in enumerate(st.session_state.tasks):
     with st.container():
-        cols = st.columns([4, 2, 1])
-        col1, col2, col3 = cols
-    col1.markdown(f"<div style='display:flex; align-items:center; height:38px'>{task['name']}</div>", unsafe_allow_html=True)
-    new_points = col2.number_input("Pkt", value=task["points"], key=f"edit_{i}", min_value=1, label_visibility="collapsed")
+        col_arrows, col_name, col_points, col_delete = st.columns([2, 5, 1, 1])
+
+        col_up, col_down = col_arrows.columns([1, 1])
+        if i > 0:
+            if col_up.button("⬆️", key=f"up_{i}", use_container_width=True):
+                st.session_state.tasks[i - 1], st.session_state.tasks[i] = st.session_state.tasks[i], \
+                                                                           st.session_state.tasks[i - 1]
+                st.rerun()
+        else:
+            col_up.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
+
+        if i < len(st.session_state.tasks) - 1:
+            if col_down.button("⬇️", key=f"down_{i}", use_container_width=True):
+                st.session_state.tasks[i + 1], st.session_state.tasks[i] = st.session_state.tasks[i], \
+                                                                           st.session_state.tasks[i + 1]
+                st.rerun()
+        else:
+            col_down.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
+
+        col_name.markdown(
+            f"<div style='display:flex; align-items:center; height:38px; padding-left:10px'>{task['name']}</div>",
+            unsafe_allow_html=True)
+
+    new_points = col_points.number_input("Pkt", value=task["points"], key=f"edit_{i}", min_value=1,
+                                         label_visibility="collapsed", step=1, format="%d")
     if new_points != task["points"]:
         task["points"] = new_points
         st.rerun()
-    if col3.button("Usuń", key=f"delete_{i}"):
+    if col_delete.button("Usuń", key=f"delete_{i}"):
         to_delete.append(i)
 
 for i in reversed(to_delete):
